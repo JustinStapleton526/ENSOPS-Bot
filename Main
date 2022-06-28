@@ -1,0 +1,1219 @@
+from io import StringIO
+import requests
+import pandas as pd
+from subprocess import Popen, DEVNULL
+import logging
+import os
+import json
+import tabulate
+from tabulate import tabulate
+from netmiko.ssh_exception import NetMikoTimeoutException, \
+    NetMikoAuthenticationException
+from paramiko.ssh_exception import SSHException
+from datetime import datetime
+from netmiko import ConnectHandler
+import sys
+import time
+import datetime
+from slack_bolt import App
+from slack_bolt.adapter.socket_mode import SocketModeHandler
+
+from dotenv import load_dotenv
+load_dotenv() # take environment variables from .env
+# variables will be called as follows:
+# SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+
+
+logging.basicConfig(level=logging.DEBUG)
+
+SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN")
+
+app = App(token=SLACK_BOT_TOKEN)
+
+#=================================================
+
+@app.command("/akipstest")
+def Akips_test(body, ack, command, respond, client, logger ):
+    ack()
+    command = command["text"]
+    old_stdout = sys.stdout
+    result = StringIO()
+    sys.stdout = result
+
+
+    def Akips2():
+        e = "error"
+        ipaddress = command
+        AKIPS_PW = os.getenv("AKIPS_PW")
+
+        akipsget_ip2mac = requests.get(
+            "http://10.255.27.175/api-spm?password="
+            + str(AKIPS_PW)
+            + ";filename=ip2mac",
+        ).text.splitlines()
+
+        akipslist_ip2mac = []
+        for line in akipsget_ip2mac:
+            line = line.split(",")
+            akipslist_ip2mac.append(line)
+
+        try:
+            akips_ip2mac = pd.DataFrame(akipslist_ip2mac, columns=["id", "macaddr", "ipaddr"])
+
+        except Exception as e:
+            pass
+
+        new_df = akips_ip2mac.loc[akips_ip2mac['ipaddr'] == ipaddress]
+
+        akips_mac_1 = new_df[["macaddr"]]
+        akips_mac_2 = tabulate(akips_mac_1, showindex=False, tablefmt="plain")
+
+
+        def Akips_mac_search():
+            try:
+                url = "http://10.255.27.175/api-spm?password=" + AKIPS_PW + ";mac=" + ipaddress
+                data = requests.get(url)
+                if data.status_code != 200:
+                    pass
+                else:
+                    data_string = data.text
+                    data_array = data_string.split(",");
+
+                    print("Device: " + data_array[2])
+                    print("Port: " + data_array[3])
+                    print("VLAN: " + data_array[4])
+                    print("Vendor: " + data_array[1])
+                    print("MAC: " + data_array[0])
+                    print("IP Address: " + data_array[5])
+
+            except Exception as e:
+                pass
+
+
+        def Akips_retrieve_data():
+
+            try:
+                url = "http://10.255.27.175/api-spm?password=" + AKIPS_PW + ";mac=" + akips_mac_2
+                data = requests.get(url)
+
+                data_string = data.text
+                data_array = data_string.split(",");
+
+                print("Device: "+data_array[2])
+                print("Port: "+data_array[3])
+                print("VLAN: "+data_array[4])
+                print("Vendor: " + data_array[1])
+                print("MAC: " + data_array[0])
+                print("IP Address: "+data_array[5])
+
+            except Exception as e:
+                Akips_mac_search()
+
+        Akips_retrieve_data()
+
+    Akips2()
+
+
+    sys.stdout = old_stdout
+    result_string = result.getvalue()
+    respond(text=result_string)
+
+#===========================================================
+
+@app.command("/onboarding")
+def onboarding_command(body, ack, respond, client, logger ):
+        #Acknowledge command request
+        ack()
+
+        logger.info(body)
+
+        response = client.views_open(
+            trigger_id=body["trigger_id"],
+            view={
+              "type": "modal",
+              "callback_id": "onboarding-modal",
+              "title": {
+                "type": "plain_text",
+                "text": "Onboarding Info",
+                "emoji": True
+              },
+              "close": {
+                "type": "plain_text",
+                "text": "OK",
+                "emoji": True
+              },
+              "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "Hey there 👋. I'm here to provide you onboarding information for ENSOPS.\nPlease review the links provided below:"
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*1️⃣ Please visit the Wiki page for ENSOPS for general information you'll require for your day-to-day tasks.\n\n"
+                },
+                "accessory": {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "ENSOPS Wiki",
+                        "emoji": True
+                    },
+                    "value": "click_me_123",
+                    "url": "https://wiki.aa.com/bin/view/Global%20Network%20Delivery%20-%20IT/Network%20Operations%20-%20Information/",
+                    "action_id": "button_action"
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*2️⃣ Explore the various slash commands available in the ENSOPS slack channel to quickly retrieve information such as topologies, contacts, etc."
+                }
+            },
+            {
+                "type": "image",
+                "title": {
+                    "type": "plain_text",
+                    "text": "We've all been there",
+                    "emoji": True
+                },
+                "image_url": "https://i.imgur.com/DiqNuPV.jpeg",
+                "alt_text": "We've all been there"
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "➕ This is the end, but I could add more if I wanted to."
+                }
+            },
+            {
+                "type": "divider"
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": "👀 View all slash commands with `/xxx`\n❓Get help at any time with `/xxx help` or type *help* in a DM with Justin Stapleton"
+                    }
+                ]
+            }
+        ]
+                }
+            )
+        logger.info(response)
+
+#########################################################################################################
+@app.action("button_action")#button-action is the value of the action ID tag for the button in the onboarding modal
+def update_onboarding_modal(ack,body,client):
+    #acknowledge
+    ack()
+    #call views_update with built-in client
+    client.views_update(
+        #pass the view_id. which view_id? I have no idea.. I think this is boilerplate
+        view_id=body["view"]["id"],
+        #hash=body["view"]["id"],#not sure what this is used for
+        view={
+            "type":"modal",
+            "callback_id":"onboarding-modal",#this is the callback_id of the onboarding modal
+            "title":{"type":"plain_text","text":"Updated Modal"},
+            "blocks":[
+                {
+                    "type":"section",
+                    "text":{"type":"plain_text","text":"The modal just updated - This is a test to see how to update a Modal View with a button submission. Hit OK to Close"}
+                }
+            ]
+        }
+    )
+
+#########################################################################################################
+
+#########################################################################################################
+
+@app.event("app_mention")
+def print_ts(event, say):
+        ts = event["thread_ts"]
+        user_id = event["user"]
+        #I want this feature to auto link a teams bridge to use for troubleshooting on demand
+        text = f"<@{user_id}>! - this is a test trigger for app mention responses"
+        say(text=text, thread_ts=ts)
+
+
+
+
+#===========================================================
+
+@app.command("/ticket")
+def open_modal(ack, body,client, logger):
+    # Acknowledge the command request
+    ack()
+    # Call views_open with the built-in client
+    client.views_open(
+        # Pass a valid trigger_id within 3 seconds of receiving it
+        trigger_id=body["trigger_id"],
+        # View payload
+        view=
+        {
+            "title": {
+                "type": "plain_text",
+                "text": "ENSOPS Ticket Creation"
+            },
+            "submit": {
+                "type": "plain_text",
+                "text": "Submit"
+            },
+            "type": "modal",
+            "callback_id": "view_1",
+            "close": {
+                "type": "plain_text",
+                "text": "Cancel"
+            },
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "The following form will create a ticket in Cherwell"
+                    }
+                },
+                {
+                    "type": "divider"
+                },
+                {
+                    "type": "input",
+                    "block_id": "UserID_block_input",
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": "UserID_action_input"
+                    },
+                    "label": {
+                        "type": "plain_text",
+                        "text": "CORPAA UserID:"
+                    }
+                },
+                {
+                    "type": "input",
+                    "block_id": "APC_block_input",
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": "APC_action_input"
+                    },
+                    "label": {
+                        "type": "plain_text",
+                        "text": "Airport Code"
+                    }
+                },
+                {
+                    "type": "section",
+                    "block_id": "Loc_block_input",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Location Type (Select one):*"
+                    },
+                    "accessory": {
+                        "type": "multi_static_select",
+
+
+                        "placeholder": {
+                            "type": "plain_text",
+
+                            "text": "Select options",
+                            "emoji": True
+                        },
+                        "options": [
+                            {
+                                "text": {
+                                    "type": "plain_text",
+
+                                    "text": "Airport",
+                                    "emoji": True
+                                },
+                                "value": "Airport"
+                            },
+                            {
+                                "text": {
+                                    "type": "plain_text",
+
+                                    "text": "Cargo",
+                                    "emoji": True
+                                },
+                                "value": "Cargo"
+                            },
+                            {
+                                "text": {
+                                    "type": "plain_text",
+
+                                    "text": "Maintenance",
+                                    "emoji": True
+                                },
+                                "value": "Maintenance"
+                            },
+                            {
+                                "text": {
+                                    "type": "plain_text",
+
+                                    "text": "Satellite Office",
+                                    "emoji": True
+                                },
+                                "value": "Satellite Office"
+                            },
+                            {
+                                "text": {
+                                    "type": "plain_text",
+
+                                    "text": "Hangar",
+                                    "emoji": True
+                                },
+                                "value": "Hangar"
+                            },
+                            {
+                                "text": {
+                                    "type": "plain_text",
+
+                                    "text": "Campus/Res",
+                                    "emoji": True
+                                },
+                                "value": "Campus/Res"
+                            },
+                            {
+                                "text": {
+                                    "type": "plain_text",
+
+                                    "text": "Datacenter/Cloud",
+                                    "emoji": True
+                                },
+                                "value": "Datacenter/Cloud"
+                            }
+                        ],
+                        "action_id": "Loc_action_input"
+                    }
+                },
+                {
+                    "type": "input",
+                    "block_id": "QJ_block_input",
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": "QJ_action_input"
+                    },
+                    "label": {
+                        "type": "plain_text",
+                        "text": "Example QJ/Network:",
+                        "emoji": True
+                    }
+                },
+                {
+                    "type": "input",
+                    "block_id": "Issue_block_input",
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": "Issue_action_input",
+                        "multiline": True
+                    },
+                    "label": {
+                        "type": "plain_text",
+                        "text": "Issue:"
+                    }
+                },
+                {
+                    "type": "section",
+                    "block_id": "Impact_block_input",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Issue Code (Select one):*"
+                    },
+                    "accessory": {
+                        "type": "multi_static_select",
+                        "action_id": "Impact_action_input",
+                        "placeholder": {
+                            "type": "plain_text",
+                            "text": "Select options",
+                            "emoji": True
+                        },
+                        "options": [
+                            {
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "Loss of power",
+                                    "emoji": True
+                                },
+
+                                "value": "Outage"
+                            },
+                            {
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "Latency issues",
+                                    "emoji": True
+                                },
+
+                                "value": "Latency Issues"
+                            },
+                            {
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "Loss of redundancy",
+                                    "emoji": True
+                                },
+
+                                "value": "Loss of Redundancy"
+                            },
+                            {
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "Loss of connectivity",
+                                    "emoji": True
+                                },
+
+                                "value": "Loss of Connectivity"
+                            },
+
+                            {
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "Application issue",
+                                    "emoji": True
+                                },
+
+                                "value": "Application Errors"
+                            }
+
+                        ],
+
+                    }
+                }
+            ]
+        }
+    )
+    #logger.info(response)
+
+@app.view("view_1")#This only works when there is an input block in the submission
+def handle_submission(ack, body, client, view, logger,result):
+    # Here, we are picking apart the submission and tying the values to variables to repurpose for cherwell ticket requests
+    UserID_variable = view["state"]["values"]["UserID_block_input"]["UserID_action_input"]
+    UserID_variable2 = UserID_variable["value"]
+
+    APC_variable = view["state"]["values"]["APC_block_input"]["APC_action_input"]
+    APC_variable2 = APC_variable["value"]
+    APC_variable_freeform = APC_variable["value"]
+
+    wb = pd.read_excel(r"C:\Users\automation1\PycharmProjects\Documents\Cherwell_location_fields.xlsx",
+                       index_col="Location Code")
+    wb = wb.fillna(0)
+
+    try:
+        APC_variable2 = wb.loc[APC_variable2.upper(), :]
+        APC_variable2 = APC_variable["value"].upper()
+
+    except:
+        APC_variable2 = "52N"
+
+
+    Loc_variable = view["state"]["values"]["Loc_block_input"]["Loc_action_input"]
+    Loc_variable2 = Loc_variable['selected_options'][0]['value']
+
+    QJ_variable = view["state"]["values"]["QJ_block_input"]["QJ_action_input"]
+    QJ_variable2 = QJ_variable["value"]
+
+    Issue_variable = view["state"]["values"]["Issue_block_input"]["Issue_action_input"]
+    Issue_variable2 = Issue_variable["value"]
+
+    Impact_variable = view["state"]["values"]["Impact_block_input"]["Impact_action_input"]
+    Impact_variable2 = Impact_variable['selected_options'][0]['value']
+
+    #for use to know who initiated the ticket command
+    user = body["user"]["username"]
+    #full submission request output for troubleshooting
+    slack_body = body
+
+
+    #Code to insert the time (now) into the new cherwell ticket. Stored into variable Cherwell_time
+    current_time = datetime.datetime.now()
+    print(current_time.strftime('%m/%d/%y %I:%M %p'))
+    Cherwell_time = current_time.strftime('%m/%d/%y %I:%M %p')
+
+    #user = body["user"]["id"]
+    # Acknowledge the view_submission request
+    ack()
+
+    print(UserID_variable2)
+    print(APC_variable2)
+    print(Loc_variable2)
+    print(QJ_variable2)
+    print(Issue_variable2)
+    print(Impact_variable2)
+    print(user)
+
+    ack()
+
+    # Function to create cherwell ticket and store the created ITIncident # as a variable.
+    # get the token
+    def Get_Cherwell_Token_and_Create():
+
+        URL_token = os.getenv("CHERWELL_API_TOKEN_URL")
+
+        headers = {
+            "api_key": os.getenv("CHERWELL_API_TOKEN_API_KEY"),
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+
+        params = {
+            "grant_type": "password",
+            "client_id": os.getenv("CHERWELL_API_TOKEN_CLIENT_ID"),
+            "username": os.getenv("CHERWELL_API_TOKEN_USERNAME"),
+            "password": os.getenv("CHERWELL_API_TOKEN_PASSWORD")
+        }
+
+        token_response = requests.post(URL_token, headers=headers, data=params)
+        tk = json.loads(token_response.text)
+
+        if token_response.status_code != 200:
+            print('error: ' + str(token_response.status_code))
+        else:
+            print('token: ' + str(tk) + "Token Received Successfully")
+
+        # We are taking the token we just received and pairing it to variable 'tk'
+        access_token = tk['access_token']
+
+    # create the ticket
+        URL_Webapi = os.getenv("CHERWELL_API_INCIDENT_URL")
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer ' + access_token
+        }
+
+        body = json.dumps({
+            "busObId": "94233804910fc2911682e549b8873b915bba142e76",
+            "busObPublicId": "",
+            "busObRecId": "",
+            "fields": [
+                {
+                    "dirty": True,
+                    "displayName": "Title",
+                    "fieldId": "943b77193171fd508f0c6146e59833c3343eaaf14f",
+                    "html": None,
+                    "name": "Title",
+                    "value": APC_variable_freeform.upper() + " " + Loc_variable2 + " - " + Impact_variable2
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Owned By Team",
+                    "fieldId": "94231dc4fb98b9d13add194b5f829ef46244630fa0",
+                    "html": None,
+                    "name": "OwnedByTeam",
+                    "value": "Network Operations"
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Owned By Employee ID",
+                    "fieldId": "942abcbafe64e5fbe0ac1f4fcca36086cecbd2c478",
+                    "html": None,
+                    "name": "OwnedByEmployeeID",
+                    "value": "Z2118590"
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Requested By Employee ID",
+                    "fieldId": "9423285706e358e0decc324492bbd69c5dc5586b65",
+                    "html": None,
+                    "name": "RequestedByEmployeeID",
+                    "value": "Z2118590"
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Requested For Employee ID",
+                    "fieldId": "9423285c5c301dae41a83b4a9fa5e843f71481f6d8",
+                    "html": None,
+                    "name": "RequestedFOREmployeeID",
+                    "value": "00"+UserID_variable2
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Ticket Source",
+                    "fieldId": "94232866596628ae1dd80d4c4aa155faba0fce0247",
+                    "html": None,
+                    "name": "TicketSource",
+                    "value": "API"
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Description",
+                    "fieldId": "94232866994d499850d6d2461884879ecf33191d33",
+                    "html": None,
+                    "name": "Description",
+                    "value": Issue_variable2
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Service",
+                    "fieldId": "94232867470dc35c5c17d44949a2da7ec33d1b41be",
+                    "html": None,
+                    "name": "Service",
+                    "value": "Enterprise Applications/Service"
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Category",
+                    "fieldId": "94232867d1a41ce43378804c60925a875e3c3fd2d3",
+                    "html": None,
+                    "name": "Category",
+                    "value": "Network Infrastructure Wan Lan"
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Subcategory",
+                    "fieldId": "942328682288fee2a781fb441980a8312788106576",
+                    "html": None,
+                    "name": "Subcategory",
+                    "value": Impact_variable2
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Location Code",
+                    "fieldId": "942328764de2e023cfa7384bf8b5e8f3de76e320cd",
+                    "html": None,
+                    "name": "LocationCode",
+                    "value": APC_variable2
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Priority",
+                    "fieldId": "9438c93c5d4227e0a7832940298dd95637e93f94f9",
+                    "html": None,
+                    "name": "Priority",
+                    "value": "4"
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Outage Start",
+                    "fieldId": "942795a651d163288fe71842be94a647b79c9d2dca",
+                    "html": None,
+                    "name": "OutageStart",
+                    "value": Cherwell_time
+                },
+                {
+                    "dirty": False,
+                    "displayName": "Outage End",
+                    "fieldId": "942795b49b1321d48ead7d4ef2bc7691a2a18344cb",
+                    "html": None,
+                    "name": "OutageEnd",
+                    "value": "2/1/2021 2:10 PM"
+                },
+                {
+                    "dirty": "FALSE",
+                    "name": "CauseCode",
+                    "displayName": "Cause Code",
+                    "fieldId": "942328659062e0fa41826b43e5896e01749c3bc797",
+                    "value": "Network Outage"
+                },
+                {
+                    "name": "ResolutionCode",
+                    "displayName": "Resolution Code",
+                    "fieldId": "94232851162b8e670ac58c41d39517f6873ba1aa1f",
+                    "dirty": "FALSE",
+                    "value": "Completed"
+                },
+                {
+                    "name": "ExternalTicketID",
+                    "displayName": "External Ticket ID",
+                    "fieldId": "9424be22f9fc980763e37c4ff6b6a9583dcf0152af",
+                    "dirty": "FALSE",
+                    "value": "000000253520791"
+                },
+                {
+                    "name": "ResolutionDetails",
+                    "displayName": "Resolution Details",
+                    "fieldId": "9423954bcabf978e825d9f4996b7de567b99fce968",
+                    "dirty": "FALSE",
+                    "value": "Description: EMPLOYEE VARIABLE\r\nAction: Cleared\r\nResolution Set: LAN - AT&T Network"
+                }
+            ],
+            "errorCode": None,
+            "errorMessage": None,
+            "hasError": False
+        })
+
+        ITincident_response = requests.request("POST", URL_Webapi, headers=headers, data=body)
+        # print(ITincident_response)
+        # print()
+        ITincident_data = json.loads(ITincident_response.text)
+        #print(ITincident_data)
+        print(ITincident_data['busObPublicId'])
+        Cherwell_ticket_number = ITincident_data['busObPublicId']
+        Cherwell_RecID = ITincident_data['busObRecId']
+
+        # =======================================================================
+        # Create task
+        URL_Webapi = os.getenv("CHERWELL_API_TASK_URL")
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer ' + access_token
+        }
+
+        body = json.dumps({
+            "busObId": "942510dcb3c6ccc584e54d4f9ea294bb13d2d88664",
+            "busObPublicId": "",
+            "busObRecId": "",
+            "fields": [
+                {
+                    "dirty": True,
+                    "displayName": "Parent PublicID",
+                    "fieldId": "9387d7efd191c18d9f954747a08ed7765b883e0925",
+                    "html": None,
+                    "name": "ParentPublicID",
+                    "value": Cherwell_ticket_number
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Parent RecID",
+                    "fieldId": "9355d6d6f3d7531087eab4456482100476d46ac59b",
+                    "html": None,
+                    "name": "ParentRecID",
+                    "value": Cherwell_RecID
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Instructions",
+                    "fieldId": "9355d5ef648edf7a8ed5604d56af11170cce5dc25e",
+                    "html": None,
+                    "name": "Instructions",
+                    "value": Issue_variable2
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Title",
+                    "fieldId": "93ad98a2d68a61778eda3d4d9cbb30acbfd458aea4",
+                    "html": None,
+                    "name": "Title",
+                    "value": APC_variable_freeform.upper() + " " + Loc_variable2 + " - " + Impact_variable2
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Owned By Team",
+                    "fieldId": "93cfd5a4e10af4933a573444d08cbc412da491b42e",
+                    "html": None,
+                    "name": "OwnedByTeam",
+                    "value": "Network Operations"
+                },
+                {
+                    "dirty": False,
+                    "displayName": "Owned By Employee ID",
+                    "fieldId": "94271df696888715ba008d4b87b1964128ce28a7a0",
+                    "html": None,
+                    "name": "OwnedByEmployeeID",
+                    "value": ""
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Parent Type Name",
+                    "fieldId": "9387d7edcd90b26af435a5407abac99d264bb2dfcb",
+                    "html": None,
+                    "name": "ParentTypeName",
+                    "value": "IT Incident"
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Parent TypeID",
+                    "fieldId": "9355d6d84625cc7c1a7a48435ea878328f1646c7af",
+                    "html": None,
+                    "name": "ParentTypeID",
+                    "value": "94233804910fc2911682e549b8873b915bba142e76"
+                },
+                {
+                    "dirty": True,
+                    "displayName": "Location",
+                    "fieldId": "93948f6eb1016504463a5e4dad81a5c2ee8b6248b3",
+                    "html": None,
+                    "name": "Location",
+                    "value": Loc_variable2
+                }
+            ],
+            "errorCode": None,
+            "errorMessage": None,
+            "hasError": False
+        })
+
+        ITtask_response = requests.request("POST", URL_Webapi, headers=headers, data=body)
+        ITtask_data = json.loads(ITtask_response.text)
+        print(ITtask_response)
+        Cherwell_task_number = ITtask_data['busObPublicId']
+
+
+
+
+        # This is the channel we will post the ticket information to. We want to lock this down to the operations channel.
+        channel_id = "global-network-operations"
+        # This is the richtext that will create the ticket post within slack.
+        blocks = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "IT Incident " + Cherwell_ticket_number + " | Task " + Cherwell_task_number + " created for: " + UserID_variable2,
+                    "emoji": True
+                }
+            },
+            {
+                "type": "divider"
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*Airport Code:* " + APC_variable_freeform.upper() + " - " + Loc_variable2,
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*Affected network(s)/Example QJ:* " + QJ_variable2,
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*Issue:* " + Impact_variable2 + "\n\n" + Issue_variable2,
+                }
+            }
+        ]
+
+        # Call the chat.postMessage method using the WebClient
+        result = client.chat_postMessage(
+            channel=channel_id,
+            blocks=blocks)
+
+    Get_Cherwell_Token_and_Create()
+
+#=======================
+
+
+
+@app.command("/diagram")
+def diagram_command(ack, command, say, respond):
+        #Acknowledge command request
+        ack()
+        command = command['text']
+        #respond(text="Currently looking for " + command.upper() + "'s diagram")
+        #below code hacks the stdout and shoves it into a variable called result.
+        old_stdout = sys.stdout
+        result = StringIO()
+        sys.stdout = result
+        #=======================
+        #now we place the code for our function
+        def topology_info():
+            wb = pd.read_excel(r"C:\Users\automation1\PycharmProjects\Documents\international_site_codes.xlsx", index_col="APC")
+            wb = wb.fillna(0)
+            try:
+                international_check = wb.loc[command.upper(), :]
+                international_apc = "https://spteam.aa.com/sites/ENS/NetworkDelivery/NetworkEngineering/Site%20Repository/Forms/AllItems.aspx?RootFolder=%2Fsites%2FENS%2FNetworkDelivery%2FNetworkEngineering%2FSite%20Repository%2FInternational%2F" + command.upper() + "%2FDrawings&FolderCTID=0x012000F613118C04EF074B92C961A565333720&View=%7B04E01156%2D0F0C%2D42F9%2D912B%2D36855D2ED43F%7D"
+
+                diagram_block = [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "<" + international_apc + "|" + command.upper() + " Sharepoint repository>"
+                        }
+                    }
+                ]
+
+                respond(blocks=diagram_block)
+            except:
+                domestic_apc = "https://spteam.aa.com/sites/ENS/NetworkDelivery/NetworkEngineering/Site%20Repository/Forms/AllItems.aspx?RootFolder=%2Fsites%2FENS%2FNetworkDelivery%2FNetworkEngineering%2FSite%20Repository%2FDomestic%2F" + command.upper() + "%2FDrawings"
+
+                diagram_block = [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "<" + domestic_apc + "|" + command.upper() + " Sharepoint repository>"
+                        }
+                    }
+                ]
+
+                respond(blocks=diagram_block)
+
+        #run the function
+        topology_info()
+        #return stdout to its original
+        sys.stdout = old_stdout
+        result_string = result.getvalue()
+        #print the result variable that stdout was pointing to previously
+        respond( text=result_string)
+
+
+
+
+@app.command("/kiosk")
+def test_command(ack, command, say, respond):
+        #Acknowledge command request
+        ack()
+        command = command['text']
+        respond(text="Currently testing kiosks on file for " + command.upper() + ":")
+
+        old_stdout = sys.stdout
+        result = StringIO()
+        sys.stdout = result
+
+        ### do variable stuff
+
+
+        def ping_kiosk():
+                print()
+                print("Executing kiosk health check...")
+                APC_store = command.upper()
+                time.sleep(1)
+
+                try:
+                        wb = pd.read_excel(r"C:\Users\automation1\PycharmProjects\Documents\Copy of SSM_Prop_TAs.xlsx",
+                                           sheet_name=command.upper())
+                        wb = wb.fillna(0)
+                        kiosk_list = wb[APC_store].tolist()
+                        p = {}
+                        for kiosk in kiosk_list:
+                                if kiosk != 0:
+                                        ip = kiosk
+                                        p[ip] = Popen(['ping', kiosk + '.corpaa.aa.com'], stdout=DEVNULL)
+
+                        while p:
+                                for kiosk, proc in p.items():
+                                        if proc.poll() is not None:
+                                                del p[kiosk]
+
+                                                if proc.returncode == 1:
+                                                        print('%s' % kiosk.replace("KIOSK ID", "").replace("spare", "").replace("Spare", ""))
+                                                if proc.returncode == 0:
+                                                        print('%s - Responsive to pings:' % kiosk)
+                                                break
+
+                        print()
+                        #print("...All done! Documented, dedicated kiosks are reachable unless listed otherwise.")
+                        #print()
+                        print("This tool does not test Common-Use kiosks.")
+
+                        print()
+
+                except ValueError:
+                        print("... No dedicated kiosks documented for this location. Kiosks may be Common-Use only.")
+                        print()
+
+
+        ping_kiosk()
+        sys.stdout = old_stdout
+        result_string = result.getvalue()
+        respond( text=result_string)
+
+
+@app.command("/contacts")
+def test_command(ack, command, say, respond):
+        # Acknowledge command request
+        ack()
+        command = command['text']
+
+        old_stdout = sys.stdout
+        result = StringIO()
+        sys.stdout = result
+
+        respond(text="Currently retrieving contacts for " + command.upper())
+
+        ### do variable stuff
+
+        def get_contacts():
+                try:
+
+                        print("-   Local contacts & site access hours")
+                        print()
+                        wb = pd.read_excel(r"C:\Users\automation1\PycharmProjects\Documents\Site Contacts.xlsx",
+                                           sheet_name=command.upper())
+                        wb = wb.fillna(0)
+                        contacts_list = wb["Contacts"].tolist()
+
+                        for contacts in contacts_list:
+                                if contacts != 0:
+                                        print(contacts)
+                except:
+                        print("... No contacts on file for this location. Please update 'Site Contacts.xlsx' file.")
+
+        def critical_site():
+                wb = pd.read_excel(r"C:\Users\automation1\PycharmProjects\Documents\critical_site_list.xlsx",
+                                   index_col="Sites")
+                wb = wb.fillna(0)
+                try:
+                        critical_list = wb.loc[command.upper(), :]
+                        print("Critical site: Yes")
+
+                except:
+                        print("Critical site: No")
+
+
+        get_contacts()
+        critical_site()
+        sys.stdout = old_stdout
+        result_string = result.getvalue()
+        respond( text=result_string)
+
+
+#========================================================================================================================
+
+@app.command("/spectrumtest")
+def test_command(ack, command, say, respond):
+        # Acknowledge command request
+        ack()
+        command = command['text']
+        excel_file = r"C:\Users\automation1\PycharmProjects\Documents\Device_Inventory.xlsx"
+        df = pd.read_excel(excel_file, sheet_name="DeviceInven")
+        df = df.fillna("")
+
+        old_stdout = sys.stdout
+        result = StringIO()
+        sys.stdout = result
+
+        respond(text="Currently retrieving spectrum data and performing a ping test for items in search: " + command.upper())
+
+        ### do variable stuff
+
+        def spectrumtest():
+            test_variable = command.strip("")
+            new_df = df.loc[df['universe'].str.contains(test_variable, case=False)]
+            pretty_print = new_df[["ip","name"]]
+            space1 = " "*18
+            space2 = " "*6
+            space3 = " "*18
+
+            print("Spectrum Inventory:")
+            print(tabulate(pretty_print,["IP ADDRESS", "DEVICE NAME"],showindex=False, tablefmt="simple").upper().replace(".AALCORP.AA.COM", "").replace(".LCC.USAIRWAYS.COM", ""))
+            print()
+            print()
+
+            test_list = new_df.ip#change this to name/ip to get the name/ip, but beware of DNS conflicts
+
+            for ip in test_list:
+                if ip != 0:
+                    response = os.popen(f"ping -n 2 {ip}").read()
+                    #p[ip] = Popen(['ping', "-n", "2", device], stdout=DEVNULL)
+                    if "TTL" not in response:
+                        e = ip
+                        # print(e)
+                        new_df = df.loc[df['ip'].str.contains(e, case=False)]
+                        nslookup = new_df[["ip", "name"]]#I don't remember why I called this variable nslookup - lol
+                        print(tabulate(nslookup, showindex=False, tablefmt="plain") + " - Is unresponsive to pings.")
+
+
+        spectrumtest()
+
+        sys.stdout = old_stdout
+        result_string = result.getvalue()
+
+        respond( text=result_string)
+        respond(text="Test Complete. Devices are responsive to pings unless stated otherwise.")
+
+#========================================================================================================================
+
+@app.command("/routertest")
+def test_command(ack, command, say, respond):
+        # Acknowledge command request
+        ack()
+        command = command['text']
+
+        old_stdout = sys.stdout
+        result = StringIO()
+        sys.stdout = result
+
+        respond(text="Testing router: " + command.upper())
+
+        ### do variable stuff
+
+        def connect_health_check():
+            try:
+                ssh_connection = ConnectHandler(
+                    device_type='cisco_ios',
+                    ip=command,
+                    username=os.getenv("ATT_ROUTER_USERNAME"),
+                    password=os.getenv("ATT_ROUTER_PASSWORD"),
+                    global_delay_factor=2,
+                    timeout=15)
+                #login_time = datetime.now().replace(microsecond=0).isoformat(' ') + " MST"
+
+                try:
+                    # Long list of variables needed for connect_health_check function
+
+                    Def_Desc = "-   PRELIMINARY ROUTER CHECK:"
+                    Uptime_Desc = "UPTIME:"
+                    INT_Desc = "INTERFACE DETAILS:"
+                    CDP_Desc = "NEIGHBORING DEVICES: - LAN:"
+                    BGP_Desc = "BGP PEERS - WAN:"
+
+                    Uptime = ssh_connection.send_command("sh version | in uptime", expect_string=r"#", max_loops=5)
+                    Int_Status = ssh_connection.send_command("sh int desc | ex admin", expect_string=r"#", max_loops=5)
+                    CDP = ssh_connection.send_command("sh cdp ne | be Device", expect_string=r"#", max_loops=5)
+                    BGP_Neighbor = ssh_connection.send_command("sh ip bgp sum | be Neighbor", expect_string=r"#", max_loops=5)
+
+                    print('router_check')
+
+                    print()
+                    print("Connected To...", command)
+                    #print("Login Time:", login_time)
+                    print()
+                    print('uptime')
+                    print()
+                    print(Uptime)
+                    print()
+                    print('int_desc')
+                    print()
+                    print(Int_Status)
+                    print()
+                    print('cdp_desc')
+                    print()
+                    print(CDP)
+                    print()
+                    print('bgp_desc')
+                    print()
+                    print(BGP_Neighbor)
+
+                    # Disconnect from router
+                    ssh_connection.disconnect()
+                    print()
+                    print("Disconnected From...", command)
+                    #print("Logout Time:", datetime.now().replace(microsecond=0).isoformat(' '), "MST")
+
+                except Exception as reason:
+                    print("Failed to execute cli on {} due to {}".format(command, reason))
+                    ssh_connection.disconnect()
+
+            except (NetMikoTimeoutException, NetMikoAuthenticationException, SSHException) as reason:
+                print("Failed to execute cli on {} due to {}".format(command, reason))
+
+        connect_health_check()
+
+        sys.stdout = old_stdout
+        result_string = result.getvalue()
+        respond( text=result_string)
+        respond(text="Test Complete")
+
+
+#========================================================================================================================
+
+       # say(f"{command['text']}")
+       # say(f"{command['ts']}")
+       # print(data)
+
+#text is whatever comes after the /test command.. need to change this to variable to action and get it to post data to slack
+#respond whispers to you, say blasts it everywhere
+
+if __name__ == "__main__":
+        handler = SocketModeHandler(app, SLACK_APP_TOKEN)
+        handler.start()
+
+
